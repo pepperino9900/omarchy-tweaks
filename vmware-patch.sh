@@ -6,6 +6,8 @@ IFS=$'\n\t'
 # Globals
 DRY_RUN=false
 TIMESTAMP() { date +%s; }
+BACKUP_DIR="/tmp/backup/vmware"
+TERMINAL_CMD="${TERMINAL_CMD:-ghostty}"
 
 usage() {
   cat <<EOF
@@ -47,31 +49,74 @@ apply_transform() {
     rm -f -- "$tmp"
     return 0
   fi
-  local bak="${file}.$(TIMESTAMP).bak"
+  mkdir -p -- "$BACKUP_DIR"
+  local bak="$BACKUP_DIR/$(basename "$file").$(TIMESTAMP).bak"
   cp -- "$file" "$bak"
   mv -- "$tmp" "$file"
   echo "Patched $file (backup: $bak)"
 }
 
-# Prerequisite: install ghostty
-install_ghostty() {
-  if command -v ghostty &> /dev/null; then
+# verify_changes: check GSK_RENDERER appears exactly once and omarchy-menu perms are 755
+verify_changes() {
+  local env_file="$HOME/.config/uwsm/env"
+  local menu_file="$HOME/.local/share/omarchy/bin/omarchy-menu"
+
+  # Check GSK_RENDERER line exists exactly once
+  if [ -f "$env_file" ]; then
+    local count
+    count=$(grep -c '^export GSK_RENDERER=' "$env_file" || true)
+    if [ "$count" -ne 1 ]; then
+      echo "verify_changes: expected exactly one GSK_RENDERER line in $env_file, found: $count"
+      return 1
+    fi
+  else
+    echo "verify_changes: $env_file not found"
+    return 1
+  fi
+
+  # Check omarchy-menu permission
+  if [ -f "$menu_file" ]; then
+    mode=$(stat -c '%a' "$menu_file")
+    if [ "$mode" != "755" ]; then
+      echo "verify_changes: expected $menu_file mode 755, found: $mode"
+      return 1
+    fi
+  else
+    echo "verify_changes: $menu_file not found"
+    return 1
+  fi
+
+  echo "verify_changes: OK"
+  return 0
+}
+
+# Prerequisite: install the configured terminal (TERMINAL_CMD)
+install_terminal() {
+  if command -v "$TERMINAL_CMD" &> /dev/null; then
     return 0
   fi
-  echo "ghostty not found"
+  echo "$TERMINAL_CMD not found"
   if command -v yay &> /dev/null; then
-    echo "Installing ghostty with yay..."
-    yay -S --noconfirm ghostty
+    echo "Installing $TERMINAL_CMD with yay..."
+    if ! yay -S --noconfirm "$TERMINAL_CMD"; then
+      echo "Failed to install $TERMINAL_CMD via yay"
+      exit 1
+    fi
   else
-    echo "Package manager 'yay' not found. Please install ghostty manually."
-    return 1
+    echo "Package manager 'yay' not found. Please install $TERMINAL_CMD manually."
+    exit 1
+  fi
+  # Final check
+  if ! command -v "$TERMINAL_CMD" &> /dev/null; then
+    echo "$TERMINAL_CMD still not available after attempted install"
+    exit 1
   fi
 }
 patch_hypr_bindings() {
   BINDINGS_FILE="$HOME/.config/hypr/bindings.conf"
   if [ -f "$BINDINGS_FILE" ]; then
   # transform command: sed writes to stdout
-  transform="sed 's|\\\$terminal = uwsm app -- alacritty|\\\$terminal = uwsm app -- ghostty|g' '$BINDINGS_FILE'"
+    transform="sed 's|\\\$terminal = uwsm app -- alacritty|\\\$terminal = uwsm app -- ${TERMINAL_CMD}|g' '$BINDINGS_FILE'"
   apply_transform "$BINDINGS_FILE" "$transform"
   else
     echo "$BINDINGS_FILE not found, skipping patch."
@@ -82,9 +127,10 @@ patch_omarchy_menu() {
   MENU_FILE="$HOME/.local/share/omarchy/bin/omarchy-menu"
   if [ -f "$MENU_FILE" ]; then
   # Only operate on lines containing 'alacritty'. Replace alacritty -> ghostty,
-  # remove --class forms (space or =) including quoted values, and collapse
-  # internal duplicate spacing while preserving leading indentation.
-    transform="sed -E '/alacritty/ { s/\\balacritty\\b/ghostty/g; s/--class(=| )[[:space:]]*[^[:space:]]+//g; s/([^[:space:]])[[:space:]]{2,}/\\1 /g }' '$MENU_FILE'"
+    # Only operate on lines containing 'alacritty'. Replace alacritty -> the
+    # configured terminal, remove --class forms (space or =) including quoted
+    # values, and collapse internal duplicate spacing while preserving leading indentation.
+  transform="sed -E '/alacritty/ { s/\\balacritty\\b/${TERMINAL_CMD}/g; s/--class(=| )[[:space:]]*[^[:space:]]+//g; s/([^[:space:]])[[:space:]]{2,}/\\1 /g }' '$MENU_FILE'"
   apply_transform "$MENU_FILE" "$transform"
   else
     echo "$MENU_FILE not found, skipping patch."
@@ -98,6 +144,7 @@ patch_env() {
     return 0
   fi
   transform="(printf '%s\n' 'export GSK_RENDERER=cairo'; awk '{ if (\$0 == \"export TERMINAL=alacritty\") { print \"export TERMINAL=ghostty\" } else { print \$0 } }' '$ENV_FILE')"
+    transform="(printf '%s\n' 'export GSK_RENDERER=cairo'; awk '{ if (\$0 == \"export TERMINAL=alacritty\") { print \"export TERMINAL=${TERMINAL_CMD}\" } else { print \$0 } }' '$ENV_FILE')"
   apply_transform "$ENV_FILE" "$transform"
 }
 
@@ -110,7 +157,9 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
-install_ghostty || true
+install_terminal
 patch_env
 patch_hypr_bindings
 patch_omarchy_menu
+
+verify_changes || true
