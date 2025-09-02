@@ -81,7 +81,10 @@ patch_hypr_bindings() {
 patch_omarchy_menu() {
   MENU_FILE="$HOME/.local/share/omarchy/bin/omarchy-menu"
   if [ -f "$MENU_FILE" ]; then
-  transform="sed -E 's/alacritty( --class [^ ]+)?/ghostty\\1/g' '$MENU_FILE'"
+  # Handle both "--class VALUE" and "--class=VALUE" so we remove the
+  # class token when converting alacritty to ghostty. Collapse extra spaces
+  # in case the class token was removed.
+  transform="sed -E 's/alacritty( --class(=| )[^ ]+)?/ghostty/g; s/[[:space:]]+/ /g; s/^ //; s/ $//' '$MENU_FILE'"
   apply_transform "$MENU_FILE" "$transform"
   else
     echo "$MENU_FILE not found, skipping patch."
