@@ -81,10 +81,10 @@ patch_hypr_bindings() {
 patch_omarchy_menu() {
   MENU_FILE="$HOME/.local/share/omarchy/bin/omarchy-menu"
   if [ -f "$MENU_FILE" ]; then
-  # Handle both "--class VALUE" and "--class=VALUE" so we remove the
-  # class token when converting alacritty to ghostty. Collapse extra spaces
-  # in case the class token was removed.
-  transform="sed -E 's/alacritty( --class(=| )[^ ]+)?/ghostty/g; s/[[:space:]]+/ /g; s/^ //; s/ $//' '$MENU_FILE'"
+  # Only operate on lines containing 'alacritty'. Replace alacritty -> ghostty,
+  # remove --class forms (space or =) including quoted values, and collapse
+  # internal duplicate spacing while preserving leading indentation.
+    transform="sed -E '/alacritty/ { s/\\balacritty\\b/ghostty/g; s/--class(=| )[[:space:]]*[^[:space:]]+//g; s/([^[:space:]])[[:space:]]{2,}/\\1 /g }' '$MENU_FILE'"
   apply_transform "$MENU_FILE" "$transform"
   else
     echo "$MENU_FILE not found, skipping patch."
