@@ -112,6 +112,7 @@ install_terminal() {
     exit 1
   fi
 }
+
 patch_hypr_bindings() {
   BINDINGS_FILE="$HOME/.config/hypr/bindings.conf"
   if [ -f "$BINDINGS_FILE" ]; then
@@ -126,9 +127,8 @@ patch_hypr_bindings() {
 patch_omarchy_menu() {
   MENU_FILE="$HOME/.local/share/omarchy/bin/omarchy-menu"
   if [ -f "$MENU_FILE" ]; then
-  # Only operate on lines containing 'alacritty'. Replace alacritty -> ghostty,
-    # Only operate on lines containing 'alacritty'. Replace alacritty -> the
-    # configured terminal, remove --class forms (space or =) including quoted
+  # Only operate on lines containing 'alacritty'; replace alacritty -> the
+  # configured terminal, remove --class forms (space or =) including quoted
     # values, and collapse internal duplicate spacing while preserving leading indentation.
   transform="sed -E '/alacritty/ { s/\\balacritty\\b/${TERMINAL_CMD}/g; s/--class(=| )[[:space:]]*[^[:space:]]+//g; s/([^[:space:]])[[:space:]]{2,}/\\1 /g }' '$MENU_FILE'"
   apply_transform "$MENU_FILE" "$transform"
@@ -143,8 +143,14 @@ patch_env() {
     echo "$ENV_FILE not found, skipping env patch."
     return 0
   fi
-  transform="(printf '%s\n' 'export GSK_RENDERER=cairo'; awk '{ if (\$0 == \"export TERMINAL=alacritty\") { print \"export TERMINAL=ghostty\" } else { print \$0 } }' '$ENV_FILE')"
-    transform="(printf '%s\n' 'export GSK_RENDERER=cairo'; awk '{ if (\$0 == \"export TERMINAL=alacritty\") { print \"export TERMINAL=${TERMINAL_CMD}\" } else { print \$0 } }' '$ENV_FILE')"
+  # Only proceed if file contains either an export GSK_RENDERER or export TERMINAL=alacritty
+  if ! grep -q '^export GSK_RENDERER=' "$ENV_FILE" && ! grep -q '^export TERMINAL=alacritty' "$ENV_FILE"; then
+    echo "patch_env: no GSK_RENDERER or export TERMINAL=alacritly lines found in $ENV_FILE, skipping"
+    return 0
+  fi
+    transform="awk 'BEGIN{seen=0} { if (\$0 ~ /^export GSK_RENDERER=/) { if (seen==0) { print \"export GSK_RENDERER=cairo\"; seen=1 } else next } else if (\$0 ~ /^export TERMINAL=alacritty\$/) { print \"export TERMINAL=${TERMINAL_CMD}\" } else print \$0 } END{ if (seen==0) print \"export GSK_RENDERER=cairo\" }' '$ENV_FILE'"
+
+  transform="awk 'BEGIN{seen=0} { if (\$0 ~ /^export GSK_RENDERER=/) { if (seen==0) { print \"export GSK_RENDERER=cairo\"; seen=1 } else next } else if (\$0 ~ /^export TERMINAL=alacritty\$/) { print \"export TERMINAL=${TERMINAL_CMD}\" } else print \$0 } END{ if (seen==0) print \"export GSK_RENDERER=cairo\" }' '$ENV_FILE'"
   apply_transform "$ENV_FILE" "$transform"
 }
 
