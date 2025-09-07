@@ -132,6 +132,7 @@ patch_omarchy_menu() {
     # values, and collapse internal duplicate spacing while preserving leading indentation.
   transform="sed -E '/alacritty/ { s/\\balacritty\\b/${TERMINAL_CMD}/g; s/--class(=| )[[:space:]]*[^[:space:]]+//g; s/([^[:space:]])[[:space:]]{2,}/\\1 /g }' '$MENU_FILE'"
   apply_transform "$MENU_FILE" "$transform"
+  chmod 755 "$MENU_FILE"
   else
     echo "$MENU_FILE not found, skipping patch."
   fi
