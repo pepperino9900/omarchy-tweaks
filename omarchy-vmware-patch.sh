@@ -138,6 +138,20 @@ patch_omarchy_menu() {
   fi
 }
 
+patch_waybar() {
+  WAYBAR_FILE="$HOME/.config/waybar/config.jsonc"
+  if [ -f "$WAYBAR_FILE" ]; then
+  # Only operate on lines containing 'alacritty'; replace alacritty -> the
+  # configured terminal, remove --class forms (space or =) including quoted
+    # values, and collapse internal duplicate spacing while preserving leading indentation.
+  transform="sed -E '/alacritty/ { s/\\balacritty\\b/${TERMINAL_CMD}/g; s/--class(=| )[[:space:]]*[^[:space:]]+//g; s/([^[:space:]])[[:space:]]{2,}/\\1 /g }' '$WAYBAR_FILE'"
+  apply_transform "$WAYBAR_FILE" "$transform"
+  chmod 755 "$WAYBAR_FILE"
+  else
+    echo "$WAYBAR_FILE not found, skipping patch."
+  fi
+}
+
 patch_env() {
   ENV_FILE="$HOME/.config/uwsm/env"
   if [ ! -f "$ENV_FILE" ]; then
@@ -168,5 +182,6 @@ install_terminal
 patch_env
 patch_hypr_bindings
 patch_omarchy_menu
+patch_waybar
 
 verify_changes || true
